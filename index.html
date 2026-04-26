@@ -7,8 +7,18 @@
   <style>
     body { font-family: Arial; }
     .chart { display: inline-block; margin: 20px; }
-    .line { fill: none; stroke: steelblue; opacity: 0.4; }
-    .highlight { stroke: red; opacity: 1; }
+
+    .line {
+      fill: none;
+      stroke: steelblue;
+      opacity: 0.3;
+    }
+
+    .highlight {
+      stroke: red;
+      opacity: 1;
+      stroke-width: 2px;
+    }
   </style>
 </head>
 
@@ -33,7 +43,7 @@ d3.csv("cereal.csv").then(data => {
     d.Fiber = +d.Fiber;
   });
 
-  // SCATTER
+  // ================= SCATTER =================
   const svgScatter = d3.select("#scatter")
     .append("svg")
     .attr("width", width)
@@ -64,14 +74,25 @@ d3.csv("cereal.csv").then(data => {
     .attr("r", 4)
     .attr("fill", "steelblue");
 
+  // ✅ BRUSH (FIXED)
   const brush = d3.brush()
     .extent([[40, 10], [width - 20, height - 30]])
-    .on("end", brushended);
+    .on("brush end", brushed);
 
-  svgScatter.append("g").call(brush);
+  svgScatter.append("g")
+    .attr("class", "brush")
+    .call(brush);
 
-  function brushended({selection}) {
-    if (!selection) return;
+  function brushed(event) {
+    const selection = event.selection;
+
+    // Reset if no selection
+    if (!selection) {
+      points.attr("fill", "steelblue");
+      updateBar(data);
+      updateParallel(data);
+      return;
+    }
 
     const [[x0, y0], [x1, y1]] = selection;
 
@@ -80,36 +101,44 @@ d3.csv("cereal.csv").then(data => {
       y(d.Calories) >= y0 && y(d.Calories) <= y1
     );
 
+    // Highlight selected points
+    points.attr("fill", d =>
+      selected.includes(d) ? "red" : "steelblue"
+    );
+
+    // Update other charts
     updateBar(selected);
     updateParallel(selected);
-
-    points.attr("fill", d => selected.includes(d) ? "red" : "steelblue");
   }
 
+  // Labels
   svgScatter.append("text")
-  .attr("x", width / 2)
-  .attr("y", height)
-  .text("Sugars");
+    .attr("x", width / 2)
+    .attr("y", height)
+    .text("Sugars");
 
-svgScatter.append("text")
-  .attr("transform", "rotate(-90)")
-  .attr("x", -height / 2)
-  .attr("y", 15)
-  .attr("text-anchor", "middle")
-  .text("Calories");
+  svgScatter.append("text")
+    .attr("transform", "rotate(-90)")
+    .attr("x", -height / 2)
+    .attr("y", 15)
+    .attr("text-anchor", "middle")
+    .text("Calories");
 
-  // BAR
+  // ================= BAR =================
   const svgBar = d3.select("#bar")
     .append("svg")
     .attr("width", width)
     .attr("height", height);
 
   function updateBar(filteredData) {
+
+    const dataToUse = filteredData.length ? filteredData : data;
+
     const grouped = d3.rollup(
-  filteredData,
-  v => d3.mean(v, d => d.Calories),
-  d => d.Manufacturer ? d.Manufacturer.trim().toUpperCase() : "Unknown"
-);
+      dataToUse,
+      v => d3.mean(v, d => d.Calories),
+      d => d.Manufacturer ? d.Manufacturer.trim().toUpperCase() : "Unknown"
+    );
 
     const barData = Array.from(grouped, ([key, value]) => ({mfr: key, value}));
 
@@ -145,7 +174,7 @@ svgScatter.append("text")
 
   updateBar(data);
 
-  // PARALLEL
+  // ================= PARALLEL =================
   const svgParallel = d3.select("#parallel")
     .append("svg")
     .attr("width", width)
@@ -184,14 +213,17 @@ svgScatter.append("text")
       d3.select(this).call(d3.axisLeft(yScale[d]));
     });
 
+  // ✅ FIXED highlight logic
   function updateParallel(filteredData) {
-    lines.attr("class", d =>
-      filteredData.includes(d) ? "line highlight" : "line"
-    );
+    lines
+      .classed("highlight", d => filteredData.includes(d))
+      .style("opacity", d => filteredData.includes(d) ? 1 : 0.1);
   }
+
+  // Titles
   d3.select("#scatter").append("h4").text("Scatter: Sugars vs Calories");
-d3.select("#bar").append("h4").text("Avg Calories by Manufacturer");
-d3.select("#parallel").append("h4").text("Parallel Coordinates");
+  d3.select("#bar").append("h4").text("Avg Calories by Manufacturer");
+  d3.select("#parallel").append("h4").text("Parallel Coordinates");
 
 });
 
