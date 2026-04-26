@@ -1,0 +1,201 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <title>Cereal Visualization</title>
+  <script src="https://d3js.org/d3.v7.min.js"></script>
+  <style>
+    body { font-family: Arial; }
+    .chart { display: inline-block; margin: 20px; }
+    .line { fill: none; stroke: steelblue; opacity: 0.4; }
+    .highlight { stroke: red; opacity: 1; }
+  </style>
+</head>
+
+<body>
+
+<h2>Cereal Visualization Dashboard</h2>
+
+<div id="scatter" class="chart"></div>
+<div id="bar" class="chart"></div>
+<div id="parallel" class="chart"></div>
+
+<script>
+
+const width = 400, height = 300;
+
+d3.csv("cereal.csv").then(data => {
+
+  data.forEach(d => {
+    d.Sugars = +d.Sugars;
+    d.Calories = +d.Calories;
+    d.Protein = +d.Protein;
+    d.Fiber = +d.Fiber;
+  });
+
+  // SCATTER
+  const svgScatter = d3.select("#scatter")
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+  const x = d3.scaleLinear()
+    .domain(d3.extent(data, d => d.Sugars))
+    .range([40, width - 20]);
+
+  const y = d3.scaleLinear()
+    .domain(d3.extent(data, d => d.Calories))
+    .range([height - 30, 10]);
+
+  svgScatter.append("g")
+    .attr("transform", `translate(0,${height - 30})`)
+    .call(d3.axisBottom(x));
+
+  svgScatter.append("g")
+    .attr("transform", "translate(40,0)")
+    .call(d3.axisLeft(y));
+
+  const points = svgScatter.selectAll("circle")
+    .data(data)
+    .enter()
+    .append("circle")
+    .attr("cx", d => x(d.Sugars))
+    .attr("cy", d => y(d.Calories))
+    .attr("r", 4)
+    .attr("fill", "steelblue");
+
+  const brush = d3.brush()
+    .extent([[40, 10], [width - 20, height - 30]])
+    .on("end", brushended);
+
+  svgScatter.append("g").call(brush);
+
+  function brushended({selection}) {
+    if (!selection) return;
+
+    const [[x0, y0], [x1, y1]] = selection;
+
+    const selected = data.filter(d =>
+      x(d.Sugars) >= x0 && x(d.Sugars) <= x1 &&
+      y(d.Calories) >= y0 && y(d.Calories) <= y1
+    );
+
+    updateBar(selected);
+    updateParallel(selected);
+
+    points.attr("fill", d => selected.includes(d) ? "red" : "steelblue");
+  }
+
+  svgScatter.append("text")
+  .attr("x", width / 2)
+  .attr("y", height)
+  .text("Sugars");
+
+svgScatter.append("text")
+  .attr("transform", "rotate(-90)")
+  .attr("x", -height / 2)
+  .attr("y", 15)
+  .attr("text-anchor", "middle")
+  .text("Calories");
+
+  // BAR
+  const svgBar = d3.select("#bar")
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+  function updateBar(filteredData) {
+    const grouped = d3.rollup(
+  filteredData,
+  v => d3.mean(v, d => d.Calories),
+  d => d.Manufacturer ? d.Manufacturer.trim().toUpperCase() : "Unknown"
+);
+
+    const barData = Array.from(grouped, ([key, value]) => ({mfr: key, value}));
+
+    const xBar = d3.scaleBand()
+      .domain(barData.map(d => d.mfr))
+      .range([40, width - 20])
+      .padding(0.2);
+
+    const yBar = d3.scaleLinear()
+      .domain([0, d3.max(barData, d => d.value)])
+      .range([height - 30, 10]);
+
+    svgBar.selectAll("*").remove();
+
+    svgBar.append("g")
+      .attr("transform", `translate(0,${height - 30})`)
+      .call(d3.axisBottom(xBar));
+
+    svgBar.append("g")
+      .attr("transform", "translate(40,0)")
+      .call(d3.axisLeft(yBar));
+
+    svgBar.selectAll("rect")
+      .data(barData)
+      .enter()
+      .append("rect")
+      .attr("x", d => xBar(d.mfr))
+      .attr("y", d => yBar(d.value))
+      .attr("width", xBar.bandwidth())
+      .attr("height", d => height - 30 - yBar(d.value))
+      .attr("fill", "orange");
+  }
+
+  updateBar(data);
+
+  // PARALLEL
+  const svgParallel = d3.select("#parallel")
+    .append("svg")
+    .attr("width", width)
+    .attr("height", height);
+
+  const dimensions = ["Calories", "Sugars", "Protein", "Fiber"];
+
+  const yScale = {};
+  dimensions.forEach(dim => {
+    yScale[dim] = d3.scaleLinear()
+      .domain(d3.extent(data, d => d[dim]))
+      .range([height - 30, 10]);
+  });
+
+  const xScale = d3.scalePoint()
+    .domain(dimensions)
+    .range([40, width - 20]);
+
+  function path(d) {
+    return d3.line()(dimensions.map(p => [xScale(p), yScale[p](d[p])]));
+  }
+
+  const lines = svgParallel.selectAll("path")
+    .data(data)
+    .enter()
+    .append("path")
+    .attr("d", path)
+    .attr("class", "line");
+
+  svgParallel.selectAll("g")
+    .data(dimensions)
+    .enter()
+    .append("g")
+    .attr("transform", d => `translate(${xScale(d)})`)
+    .each(function(d) {
+      d3.select(this).call(d3.axisLeft(yScale[d]));
+    });
+
+  function updateParallel(filteredData) {
+    lines.attr("class", d =>
+      filteredData.includes(d) ? "line highlight" : "line"
+    );
+  }
+  d3.select("#scatter").append("h4").text("Scatter: Sugars vs Calories");
+d3.select("#bar").append("h4").text("Avg Calories by Manufacturer");
+d3.select("#parallel").append("h4").text("Parallel Coordinates");
+
+});
+
+</script>
+
+</body>
+</html>
